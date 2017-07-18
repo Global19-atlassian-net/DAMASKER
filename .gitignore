@@ -5,3 +5,5 @@
 /HPC.REPmask
 *.o
 *.d
+# In case we build here:
+/build/
