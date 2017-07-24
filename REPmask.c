@@ -108,14 +108,15 @@ static int *blocks(Overlap *ovls, int novl, int *ptrim)
       { ab = ovls[i].path.abpos+PEEL_BACK;
         ae = ovls[i].path.aepos-PEEL_BACK;
 
-        if (ae >= ab) 
-          { ev[ecnt].add = 1;
-            ev[ecnt].pos = ab;
-            ecnt += 1;
-            ev[ecnt].add = 0;
-            ev[ecnt].pos = ae;
-            ecnt += 1;
-          }
+        if (ae < ab) 
+          ab = ae = (ovls[i].path.abpos + ovls[i].path.aepos)/2;
+
+        ev[ecnt].add = 1;
+        ev[ecnt].pos = ab;
+        ecnt += 1;
+        ev[ecnt].add = 0;
+        ev[ecnt].pos = ae;
+        ecnt += 1;
       }
 
     qsort(ev,ecnt,sizeof(Event),EVENT_SORT);
@@ -348,6 +349,9 @@ static int make_a_pass(FILE *input, void (*ACTION)(int, Overlap *, int), int tra
   else
     TBYTES = sizeof(uint16);
 
+  if (novl <= 0)
+    return (0);
+
   Read_Overlap(input,ovls);
   if (trace)
     { if (ovls[0].path.tlen > pmax)
@@ -379,7 +383,7 @@ static int make_a_pass(FILE *input, void (*ACTION)(int, Overlap *, int), int tra
         n = 0;
       else
         { if (trace)
-            memcpy(paths,paths+pcur,sizeof(uint16)*ovls[0].path.tlen);
+            memmove(paths,paths+pcur,sizeof(uint16)*ovls[0].path.tlen);
           n = 1;
           pcur = ovls[0].path.tlen;
           while (1)
