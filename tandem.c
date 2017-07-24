@@ -459,6 +459,7 @@ static KmerPos *Sort_Kmers(HITS_DB *block, int *len, KmerPos **buffer)
     rez[kmers].code = 0;
   else
     rez[kmers].code = 0xffffffffffffffffllu;
+  rez[kmers].read = nreads;
  
   if (src != rez)
     *buffer = src; 
@@ -921,7 +922,7 @@ static void *report_thread(void *arg)
 
   aoff = asort + (data->beg - Kmer);
   aend = asort[data->end-1].read;
-  for (ar = asort[data->beg].read; ar < aend; ar++)
+  for (ar = asort[data->beg].read; ar <= aend; ar++)
     { int alen, amarkb, amarke;
       int apos, diag;
       int setaln;
@@ -1018,7 +1019,7 @@ static void *report_thread(void *arg)
                         }
                       amatch[novla] = *apath;
                       amatch[novla].trace = (void *) (tbuf->top);
-                      memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                      memmove(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
                       novla += 1;
                       tbuf->top += apath->tlen;
 
@@ -1263,9 +1264,10 @@ void Match_Self(char *aname, HITS_DB *ablock, Align_Spec *aspec)
     MR_spec   = aspec;
     MR_tspace = Trace_Spacing(aspec);
 
+    asort[alen].read = ablock->nreads;
     parmr[0].beg = 0;
     for (i = 1; i < NTHREADS; i++)
-      { p = (alen * i) >> NSHIFT;
+      { p = (int) ((((int64) alen) * i) >> NSHIFT);
         if (p > 0)
           { ar = asort[p-1].read;
             while ((asort[p].read) == ar)
@@ -1292,7 +1294,7 @@ void Match_Self(char *aname, HITS_DB *ablock, Align_Spec *aspec)
         parmr[i].work  = New_Work_Data();
 
         parmr[i].ofile =
-             Fopen(Catenate("","",aname,Numbered_Suffix(".T",i,".las")),"w");
+             Fopen(Catenate(SORT_PATH,"/",aname,Numbered_Suffix(".T",i+1,".las")),"w");
         if (parmr[i].ofile == NULL)
           exit (1);
       }
@@ -1333,7 +1335,7 @@ zerowork:
 
     nfilt  = 0;
     for (i = 0; i < NTHREADS; i++)
-      { ofile = Fopen(Catenate("","",aname,Numbered_Suffix(".T",i,".las")),"w");
+      { ofile = Fopen(Catenate(SORT_PATH,"/",aname,Numbered_Suffix(".T",i+1,".las")),"w");
         fwrite(&nfilt,sizeof(int64),1,ofile);
         fwrite(&MR_tspace,sizeof(int),1,ofile);
         fclose(ofile);
