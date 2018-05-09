@@ -5,5 +5,7 @@
 /HPC.REPmask
 *.o
 *.d
-# In case we build here:
-/build/
+
+# meson
+subprojects/dazz_db
+/build*
