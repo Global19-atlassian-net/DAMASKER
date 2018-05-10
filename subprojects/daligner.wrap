@@ -1,0 +1,4 @@
+[wrap-git]
+directory=daligner
+url=https://github.com/PacificBiosciences/DALIGNER.git
+revision=develop

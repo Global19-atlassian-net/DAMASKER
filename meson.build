@@ -38,19 +38,14 @@ damasker_thread_dep = dependency('threads', required : true)
 # dazzdb
 damasker_dazzdb_dep = dependency('dazzdb', fallback : ['dazzdb', 'dazzdb_dep'])
 
-damasker_deps = [damasker_m_dep, damasker_thread_dep, damasker_dazzdb_dep]
+# daligner
+damasker_daligner_dep = dependency('daligner', fallback : ['daligner', 'daligner_dep'])
+
+damasker_deps = [damasker_m_dep, damasker_thread_dep, damasker_dazzdb_dep, damasker_daligner_dep]
 
 ############
 # binaries #
 ############
-
-damasker_align_impl = static_library(
-  'align convenience library',
-  files([
-    'align.c']),
-  install : false,
-  dependencies : damasker_deps,
-  c_args : damasker_flags)
 
 damasker_exes = [
   ['datander', files(['tandem.c'])],
@@ -65,6 +60,5 @@ foreach i : damasker_exes
     files([i[0] + '.c']) + i[1],
     dependencies : damasker_deps,
     install : true,
-    c_args : damasker_flags,
-    link_with : damasker_align_impl)
+    c_args : damasker_flags)
 endforeach

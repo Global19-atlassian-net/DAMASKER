@@ -8,4 +8,5 @@
 
 # meson
 subprojects/dazz_db
+subprojects/daligner
 /build*
