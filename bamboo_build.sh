@@ -1,16 +1,48 @@
-#!/bin/bash -xe
-THISDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+#!/bin/bash -e
 type module >& /dev/null || source /mnt/software/Modules/current/init/bash
+
+module load gcc
+module load git
+module load meson
+module load ninja
+module load ccache
 
 set -vex
 
-PREFIX=$PWD/build
-cd ${THISDIR}
-source bamboo_make.sh
-cd -
-cd ${PREFIX}
-tar zcf DAMASKER-SNAPSHOT.tgz bin
-NEXUS_BASEURL=http://ossnexus.pacificbiosciences.com/repository
-NEXUS_URL=$NEXUS_BASEURL/unsupported/gcc-4.9.2
-curl -v -n --upload-file DAMASKER-SNAPSHOT.tgz $NEXUS_URL/DAMASKER-SNAPSHOT.tgz
-cd -
+export CCACHE_COMPILERCHECK='%compiler% -dumpversion'
+
+case "${bamboo_planRepository_branchName}" in
+  develop|master)
+    module load dazzdb/${bamboo_planRepository_branchName}
+    module load daligner/${bamboo_planRepository_branchName}
+    export PREFIX_ARG="/mnt/software/d/damasker/${bamboo_planRepository_branchName}"
+    export BUILD_NUMBER="${bamboo_globalBuildNumber:-0}"
+    ;;
+  *)
+    module load dazzdb/develop
+    module load daligner/develop
+    export PREFIX_ARG=/PREFIX
+    export BUILD_NUMBER="0"
+    ;;
+esac
+
+# rm -rf ./build
+meson --buildtype=release --strip --libdir=lib --prefix="${PREFIX_ARG}" -Dtests=false --wrap-mode nofallback ./build .
+
+TERM='dumb' ninja -C ./build -v
+
+DESTDIR="$(pwd)/DESTDIR"
+rm -rf "${DESTDIR}"
+TERM='dumb' DESTDIR="${DESTDIR}" ninja -C ./build -v install
+
+rm -rf "${DESTDIR}"
+
+case "${bamboo_planRepository_branchName}" in
+  develop|master)
+    DESTDIR=
+    TERM='dumb' DESTDIR="${DESTDIR}" ninja -C ./build -v install
+    chmod -R a+rwx "${DESTDIR}${PREFIX_ARG}"/*
+    module load damasker/${bamboo_planRepository_branchName}
+    ldd -r $(which TANmask)
+    ;;
+esac
