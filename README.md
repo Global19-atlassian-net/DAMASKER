@@ -83,16 +83,3 @@ The -d option requests scripts that organize files into a collection of sub-dire
 HPC.TANmask writes a UNIX shell script to the standard output that runs datander on all relevant blocks of the supplied DB, then sorts and merges the resulting alignments into a single .las for each block, and finally calls TANmask on each LA block to produce a .tan mask for each block that can be merge into a single track for the entire DB with Catrack.
 
 All option arguments are passed through to datander except for the -f option which serves the same role as for HPC.REPmask above.  The -v option is passed to all programs in the script, and the -l option is also passed to TANmask.  If the integers \<first\> and \<last\> are missing then the script produced is for every block in the database \<reads\>. If \<first\> is present then HPC.TANmask produces a script that produces .tan tracks for blocks \<first\> through \<last\> (\<last\> = \<first\> if not present).
-
-
-PacBio Disclaimer
------------------
-THIS WEBSITE AND CONTENT AND ALL SITE-RELATED SERVICES, INCLUDING ANY DATA, ARE
-PROVIDED "AS IS," WITH ALL FAULTS, WITH NO REPRESENTATIONS OR WARRANTIES OF ANY
-KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTIES
-OF MERCHANTABILITY, SATISFACTORY QUALITY, NON-INFRINGEMENT OR FITNESS FOR A
-PARTICULAR PURPOSE. YOU ASSUME TOTAL RESPONSIBILITY AND RISK FOR YOUR USE OF
-THIS SITE, ALL SITE-RELATED SERVICES, AND ANY THIRD PARTY WEBSITES OR
-APPLICATIONS. NO ORAL OR WRITTEN INFORMATION OR ADVICE SHALL CREATE A WARRANTY
-OF ANY KIND. ANY REFERENCES TO SPECIFIC PRODUCTS OR SERVICES ON THE WEBSITES DO
-NOT CONSTITUTE OR IMPLY A RECOMMENDATION OR ENDORSEMENT BY PACIFIC BIOSCIENCES.
