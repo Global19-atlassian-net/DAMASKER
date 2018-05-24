@@ -22,10 +22,11 @@
 #define PATHSEP "/"
 #endif
 
-static char *Usage = "[-v] [-m<track(rep)] -c<int> <source:db> <overlaps:las> ...";
+static char *Usage = "[-v] [-n<track(rep)] -c<int> <source:db> <overlaps:las> ...";
 
-#undef  DEBUG_BLOCKS
-#undef  DEBUG_GAP_MERGE
+#undef   DEBUG_BLOCKS
+#undef   DEBUG_GAP_MERGE
+#undef   DEBUG_WELL_SELECTION
 
 
 //  Partition Constants
@@ -41,11 +42,11 @@ static char *Usage = "[-v] [-m<track(rep)] -c<int> <source:db> <overlaps:las> ..
 static int VERBOSE;
 static int MIN_COVER;
 
-static DAZZ_DB _DB, *DB = &_DB;   //  Data base
-
-static int DB_PART;               //  Input is an Overlap block
-static int DB_FIRST;              //     for reads DB_FIRST to DB_LAST-1
-static int DB_LAST;
+static DAZZ_DB   _DB, *DB = &_DB;     //  Data base
+static int        DB_FIRST;           //  First read of DB to process
+static int        DB_LAST;            //  Last read of DB to process (+1)
+static int        DB_PART;            //  0 if all, otherwise block #
+static DAZZ_READ *Reads;              //  Data base reads array
 
 static int TRACE_SPACING;         //  Trace spacing (from .las file)
 static int TBYTES;                //  Bytes per trace segment (from .las file)
@@ -137,7 +138,7 @@ static int *blocks(Overlap *ovls, int novl, int *ptrim)
       if (ev[i].add)
         { cov += 1;
           if (cov > max)
-            max += 1;
+            max = cov;
           if (cov == MIN_COVER) 
             { trim[ntrim]   = ev[i].pos-PEEL_BACK;
               flim[ntrim++] = min;
@@ -239,12 +240,10 @@ static void PARTITION(int aread, Overlap *ovls, int novl)
 
 #ifdef DEBUG_GAP_MERGE
     printf("\nGAPS\n");
-    if (novl > 0)
-      { ipath = &(ovls[0].path);
-        bread = ovls[0].bread;
-        printf("    %5d %5d  [%5d,%5d] [%5d,%5d]\n",
-               aread,bread,ipath->abpos,ipath->aepos,ipath->bbpos,ipath->bepos);
-      }
+    ipath = &(ovls[0].path);
+    bread = ovls[0].bread;
+    printf("    %5d %5d  [%5d,%5d] [%5d,%5d]\n",
+           aread,bread,ipath->abpos,ipath->aepos,ipath->bbpos,ipath->bepos);
 #endif
 
     k = 0;
@@ -286,6 +285,85 @@ static void PARTITION(int aread, Overlap *ovls, int novl)
           }
       }
     novl = k+1;
+  }
+
+  //  For reads that come from the same well, take only the las from the one that
+  //    covers A the most (in both directions).
+
+  { int   i, j, k, t;
+    int   bread, lread, cssr;
+    Path *ipath;
+    int   best, score;
+    int   bnbeg, snbeg;
+#ifdef DEBUG_WELL_SELECTION
+    int   multi;
+#endif
+
+    k = 0;
+    for (i = 0; i < novl; i = j)
+      { bread = ovls[i].bread;
+
+        for (j = bread+1; j < DB_LAST; j++)
+          if ((Reads[j].flags & DB_CSS) == 0)
+            break;
+        cssr = j;
+
+#ifdef DEBUG_WELL_SELECTION
+        multi = (cssr-bread > 1);
+        if (multi)
+          { printf(" CLUSTER: %d - %d:",bread,cssr);
+            for (j = bread+1; j < cssr; j++)
+              { printf(" %d",Reads[j].fpulse - (Reads[j-1].fpulse+Reads[j-1].rlen));
+                if (Reads[j].fpulse - (Reads[j-1].fpulse+Reads[j-1].rlen) > 60)
+                  printf(" XXX");
+              }
+            printf(" (%d)\n",Reads[bread].origin);
+          }
+#endif
+
+        lread = -1;
+        score = best = 0;
+        for (j = i; bread < cssr; j++)
+          { if (j < novl)
+              { bread = ovls[j].bread;
+                ipath = &(ovls[j].path);
+              }
+
+            if (j >= novl || bread != lread)
+              { if (score > best)
+                  { best  = score;
+                    bnbeg = snbeg;
+                  }
+                score = 0;
+                snbeg = j;
+              }
+
+            if (j >= novl || bread >= cssr)
+              break;
+
+#ifdef DEBUG_WELL_SELECTION
+            if (multi)
+              printf("    %3d: %5d %5d  [%5d,%5d] [%5d,%5d] %c\n",
+                     j,aread,bread,ipath->abpos,ipath->aepos,ipath->bbpos,ipath->bepos,
+                     COMP(ovls[j].flags) ? 'c' : 'n');
+#endif
+
+            score += ipath->aepos - ipath->abpos;
+            lread = bread;
+          }
+
+        if (best > 0)
+          { bread = ovls[bnbeg].bread;
+            for (t = bnbeg; t < j; t++)
+              if (ovls[t].bread == bread)
+                ovls[k++] = ovls[t];
+#ifdef DEBUG_WELL_SELECTION
+            if (multi)
+              printf("    %3d -> %d\n",bnbeg,best);
+#endif
+          }
+      }
+    novl = k;
   }
 
   //  Find the high-coverage intervals over the pair-merged alignment intervals
@@ -434,11 +512,8 @@ static int make_a_pass(FILE *input, void (*ACTION)(int, Overlap *, int), int tra
   return (max);
 }
 
-
 int main(int argc, char *argv[])
-{ FILE  *input;
-  char  *root, *dpwd;
-  char  *las, *lpwd;
+{ char  *root, *dpwd;
   int64  novl;
   int    c;
   char  *MASK_NAME;
@@ -464,7 +539,7 @@ int main(int argc, char *argv[])
           case 'c':
             ARG_POSITIVE(MIN_COVER,"Repeat coverage threshold")
             break;
-          case 'm':
+          case 'n':
             MASK_NAME = argv[i]+2;
             break;
         }
@@ -476,6 +551,10 @@ int main(int argc, char *argv[])
 
     if (argc < 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: Verbose mode, output statistics as proceed.\n");
+        fprintf(stderr,"      -c: cutoff depth for declaring an interval repetitive.\n");
+        fprintf(stderr,"      -n: use this name as for the repeat mask track\n");
         exit (1);
       }
     if (MIN_COVER <= 0)
@@ -500,6 +579,7 @@ int main(int argc, char *argv[])
         exit (1);
       }
     Trim_DB(DB);
+    Reads = DB->reads;
   }
 
   //  Initialize statistics gathering
@@ -512,7 +592,7 @@ int main(int argc, char *argv[])
       masked = 0;
       nmasks = 0;
 
-      printf("\nREPmask -c%d -m%s %s",MIN_COVER,MASK_NAME,argv[1]);
+      printf("\nREPmask -c%d -n%s %s",MIN_COVER,MASK_NAME,argv[1]);
       for (i = 2; i < argc; i++)
         printf(" %s",argv[i]);
       printf("\n");
@@ -525,99 +605,93 @@ int main(int argc, char *argv[])
   root = Root(argv[1],".db");
 
   for (c = 2; c < argc; c++)
-    { las  = Root(argv[c],".las");
+    { Block_Looper *parse;
+      FILE         *input;
 
-      DB_PART  = 0;
-      DB_FIRST = 0;
-      DB_LAST  = DB->nreads;
+      parse = Parse_Block_Arg(argv[c]);
 
-      { FILE *dbfile;
-        char  buffer[2*MAX_NAME+100];
-        char *p, *eptr;
-        int   i, part, nfiles, nblocks, cutoff, all, oindx;
-        int64 size;
+      while ((input = Next_Block_Arg(parse)) != NULL)
+        { DB_PART  = 0;
+          DB_FIRST = 0;
+          DB_LAST  = DB->nreads;
 
-        p = rindex(las,'.');
-        if (p != NULL)
-          { part = strtol(p+1,&eptr,10);
-            if (*eptr == '\0' && eptr != p+1)
-              { dbfile = Fopen(Catenate(dpwd,"/",root,".db"),"r");
-                if (dbfile == NULL)
-			exit (1);
-                if (fscanf(dbfile,DB_NFILE,&nfiles) != 1)
-                  SYSTEM_READ_ERROR
-                for (i = 0; i < nfiles; i++)
-                  if (fgets(buffer,2*MAX_NAME+100,dbfile) == NULL)
-                    SYSTEM_READ_ERROR
-                if (fscanf(dbfile,DB_NBLOCK,&nblocks) != 1)
-			SYSTEM_READ_ERROR
-				if (fscanf(dbfile,DB_PARAMS,&size,&cutoff,&all) != 3)
-                  SYSTEM_READ_ERROR
-                for (i = 1; i <= part; i++)
-                  if (fscanf(dbfile,DB_BDATA,&oindx,&DB_FIRST) != 2)
-                    SYSTEM_READ_ERROR
-                if (fscanf(dbfile,DB_BDATA,&oindx,&DB_LAST) != 2)
-                  SYSTEM_READ_ERROR
-                fclose(dbfile);
-                DB_PART = part;
-                *p = '\0';
+          { FILE *dbfile;
+            char  buffer[2*MAX_NAME+100];
+            char *p, *eptr;
+            int   i, part, nfiles, nblocks, cutoff, all, oindx;
+            int64 size;
+
+            p = rindex(Block_Arg_Root(parse),'.');
+            if (p != NULL)
+              { part = strtol(p+1,&eptr,10);
+                if (*eptr == '\0' && eptr != p+1)
+                  { dbfile = Fopen(Catenate(dpwd,"/",root,".db"),"r");
+                    if (dbfile == NULL)
+			    exit (1);
+                    if (fscanf(dbfile,DB_NFILE,&nfiles) != 1)
+                      SYSTEM_READ_ERROR
+                    for (i = 0; i < nfiles; i++)
+                      if (fgets(buffer,2*MAX_NAME+100,dbfile) == NULL)
+                        SYSTEM_READ_ERROR
+                    if (fscanf(dbfile,DB_NBLOCK,&nblocks) != 1)
+                      SYSTEM_READ_ERROR
+                    if (fscanf(dbfile,DB_PARAMS,&size,&cutoff,&all) != 3)
+                      SYSTEM_READ_ERROR
+                    for (i = 1; i <= part; i++)
+                      if (fscanf(dbfile,DB_BDATA,&oindx,&DB_FIRST) != 2)
+                        SYSTEM_READ_ERROR
+                    if (fscanf(dbfile,DB_BDATA,&oindx,&DB_LAST) != 2)
+                      SYSTEM_READ_ERROR
+                    fclose(dbfile);
+                    DB_PART = part;
+                  }
               }
           }
-      }
 
-      //   Set up preliminary trimming track
+          //   Set up preliminary trimming track
 
-      { int   len, size;
-        char  ans[strlen(MASK_NAME)+7];
-        char  dts[strlen(MASK_NAME)+7];
+          { int   len, size;
+            char  ans[strlen(MASK_NAME)+7];
+            char  dts[strlen(MASK_NAME)+7];
 
-        strcpy(ans,Catenate(".",MASK_NAME,".","anno"));
-        strcpy(dts,Catenate(".",MASK_NAME,".","data"));
-        if (DB_PART > 0)
-          { MSK_AFILE = Fopen(Catenate(dpwd,PATHSEP,root,
+            strcpy(ans,Catenate(".",MASK_NAME,".","anno"));
+            strcpy(dts,Catenate(".",MASK_NAME,".","data"));
+            if (DB_PART > 0)
+              { MSK_AFILE = Fopen(Catenate(dpwd,PATHSEP,root,
                                        Numbered_Suffix(".",DB_PART,ans)),"w");
-            MSK_DFILE = Fopen(Catenate(dpwd,PATHSEP,root,
+                MSK_DFILE = Fopen(Catenate(dpwd,PATHSEP,root,
                                        Numbered_Suffix(".",DB_PART,dts)),"w");
+              }
+            else
+              { MSK_AFILE = Fopen(Catenate(dpwd,PATHSEP,root,ans),"w");
+                MSK_DFILE = Fopen(Catenate(dpwd,PATHSEP,root,dts),"w");
+              }
+            if (MSK_AFILE == NULL || MSK_DFILE == NULL)
+              exit (1);
+
+            len  = DB_LAST - DB_FIRST;
+            size = 0;
+            fwrite(&len,sizeof(int),1,MSK_AFILE);
+            fwrite(&size,sizeof(int),1,MSK_AFILE);
+            MSK_INDEX = 0;
+            fwrite(&MSK_INDEX,sizeof(int64),1,MSK_AFILE);
           }
-        else
-          { MSK_AFILE = Fopen(Catenate(dpwd,PATHSEP,root,ans),"w");
-            MSK_DFILE = Fopen(Catenate(dpwd,PATHSEP,root,dts),"w");
-          }
-        if (MSK_AFILE == NULL || MSK_DFILE == NULL)
-          exit (1);
 
-        len  = DB_LAST - DB_FIRST;
-        size = 0;
-        fwrite(&len,sizeof(int),1,MSK_AFILE);
-        fwrite(&size,sizeof(int),1,MSK_AFILE);
-        MSK_INDEX = 0;
-        fwrite(&MSK_INDEX,sizeof(int64),1,MSK_AFILE);
-      }
+          //  Get trace point spacing information
 
-      //  Open overlap file
+          fread(&novl,sizeof(int64),1,input);
+          fread(&TRACE_SPACING,sizeof(int),1,input);
 
-      lpwd = PathTo(argv[c]);
-      if (DB_PART > 0)
-        input = Fopen(Catenate(lpwd,"/",las,Numbered_Suffix(".",DB_PART,".las")),"r");
-      else
-        input = Fopen(Catenate(lpwd,"/",las,".las"),"r");
-      if (input == NULL)
-        exit (1);
+          //  Process each read pile
 
-      free(lpwd);
-      free(las);
+          make_a_pass(input,PARTITION,1);
 
-      //  Get trace point spacing information
+          fclose(MSK_AFILE);
+          fclose(MSK_DFILE);
+          fclose(input);
+        }
 
-      fread(&novl,sizeof(int64),1,input);
-      fread(&TRACE_SPACING,sizeof(int),1,input);
-
-      //  Process each read pile
-
-      make_a_pass(input,PARTITION,1);
-
-      fclose(MSK_AFILE);
-      fclose(MSK_DFILE);
+      Free_Block_Arg(parse);
     }
 
   if (VERBOSE)
