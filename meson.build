@@ -48,9 +48,9 @@ damasker_deps = [damasker_m_dep, damasker_thread_dep, damasker_dazzdb_dep, damas
 ############
 
 damasker_exes = [
-  ['datander', files(['tandem.c'])],
-  ['TANmask', []],
-  ['REPmask', []],
+  ['datander', files(['DB.c', 'tandem.c'])],
+  ['TANmask', ['DB.c']],
+  ['REPmask', ['DB.c']],
   ['HPC.TANmask', []],
   ['HPC.REPmask', []]]
 
