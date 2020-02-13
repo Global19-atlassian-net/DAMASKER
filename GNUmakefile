@@ -2,7 +2,7 @@ THISDIR:=$(abspath $(dir $(realpath $(lastword ${MAKEFILE_LIST}))))
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 LDLIBS+= -lm -lpthread
 LDFLAGS+= $(patsubst %,-L%,${LIBDIRS})
-ALL = datander TANmask REPmask HPC.TANmask HPC.REPmask
+ALL = datander TANmask REPmask HPC.TANmask HPC.REPmask HPC.DAScover
 vpath %.c ${THISDIR}
 
 %: %.c
